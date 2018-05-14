@@ -7,9 +7,10 @@ import java.util.LinkedList;
 import java.util.List;
 
 import org.apache.commons.lang.StringUtils;
+import org.apache.http.Consts;
 import org.apache.http.client.fluent.Content;
-import org.apache.http.client.fluent.Form;
 import org.apache.http.client.fluent.Request;
+import org.apache.http.entity.ContentType;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest;
@@ -144,13 +145,12 @@ public class LinePublisher extends Notifier {
 
 	private void send(String message, PrintStream logger) {
 		logger.println("[LineNotifier]Build result send.");
+		logger.println(message);
 		try {
 			Content content = Request.Post("https://notify-api.line.me/api/notify")
 					.addHeader("Authorization", "Bearer " + getLineToken().getToken())
-					.bodyForm(Form.form()
-							.add("message", message)
-							.build()
-					).execute()
+					.bodyString("message=" + message, ContentType.create("application/x-www-form-urlencoded", Consts.UTF_8))
+					.execute()
 					.returnContent();
 
 			logger.println(String.format("[LineNotifier]Response : %s", content.toString()));
