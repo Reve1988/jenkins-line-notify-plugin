@@ -1,6 +1,7 @@
 package kr.revelope.jenkins.line;
 
 import java.io.IOException;
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
@@ -77,39 +78,36 @@ public class LinePublisher extends Notifier {
 
 	@Override
 	public boolean perform(AbstractBuild<?, ?> build, Launcher launcher, BuildListener listener) throws InterruptedException, IOException {
+		PrintStream logger = listener.getLogger();
+
 		SendType type = SendType.getByName(sendType);
-		Result currentResult = build.getResult();
-		if (type == null || currentResult == null) {
-			listener.getLogger().println(String.format("[LineNotifier][%s]%s\n\n%s", build.getDisplayName(), "Build result can not be received.", build.getBuildStatusUrl()));
+		if (type == null) {
+			logger.println("[LineNotifier]Invalid Send Type : " + sendType);
 			return true;
 		}
 
-		switch (type) {
-			case ALWAYS:
-				listener.getLogger().println("[LineNotifier]Build result send : " + currentResult.toString());
-				send(createBuildResultMessage(build, currentResult), listener);
-				return true;
-			case ONLY_FAILURE:
-				if (Result.FAILURE == currentResult) {
-					send(createBuildResultMessage(build, currentResult), listener);
-					return true;
-				}
-				break;
-			case ONLY_SUCCESS:
-				if (Result.SUCCESS == currentResult) {
-					listener.getLogger().println("[LineNotifier]Current build is success.");
-					send(createBuildResultMessage(build, currentResult), listener);
-					return true;
-				}
-				break;
+		Result currentResult = build.getResult();
+		if (currentResult == null) {
+			logger.println("[LineNotifier]Build result can not be received.");
+			return true;
 		}
 
-		Run previousBuild = build.getPreviousBuild();
-		if (previousBuild != null) {
+		if (type.isSend(currentResult)) {
+			send(createBuildResultMessage(build, currentResult), logger);
+			return true;
+		}
+
+		if (changeStatus) {
+			Run previousBuild = build.getPreviousBuild();
+			if (previousBuild == null) {
+				logger.println("[LineNotifier]Previous build result is not exist.");
+				return true;
+			}
+
 			Result previousResult = previousBuild.getResult();
 			if (currentResult != previousResult) {
-				listener.getLogger().println(String.format("[LineNotifier]Result is change (%s > %s).", previousResult, currentResult));
-				send(createBuildResultMessage(build, currentResult), listener);
+				logger.println(String.format("[LineNotifier]Result is change (%s > %s).", previousResult, currentResult));
+				send(createBuildResultMessage(build, currentResult), logger);
 			}
 		}
 
@@ -117,31 +115,35 @@ public class LinePublisher extends Notifier {
 	}
 
 	private String createBuildResultMessage(AbstractBuild<?, ?> build, Result currentResult) {
-		String logs = "";
-		try {
-			StringBuilder logStringBuilder = new StringBuilder();
-			for (String logLine : build.getLog(10)) {
-				logStringBuilder.append(logLine);
-				logStringBuilder.append("\n");
-			}
-
-			logs = logStringBuilder.toString();
-		} catch (IOException e) {
-			// do Nothing.
-		}
-
 		return String.format("[%s][#%s]Build result : %s\n\n%s\n\n%s%s",
 				build.getProject().getName(),
 				build.getNumber(),
 				currentResult.toString(),
-				logs,
+				getBuildLog(build, 10),
 				build.getProject().getAbsoluteUrl(),
 				build.getNumber()
 		);
 	}
 
-	private void send(String message, BuildListener listener) {
-		listener.getLogger().println("[LineNotifier]Send build result.");
+	private String getBuildLog(AbstractBuild<?, ?> build, int maxLine) {
+		List<String> logList;
+		try {
+			logList = build.getLog(maxLine);
+		} catch (IOException e) {
+			logList = new ArrayList<>();
+		}
+
+		StringBuilder logStringBuilder = new StringBuilder();
+		for (String logLine : logList) {
+			logStringBuilder.append(logLine);
+			logStringBuilder.append("\n");
+		}
+
+		return logStringBuilder.toString();
+	}
+
+	private void send(String message, PrintStream logger) {
+		logger.println("[LineNotifier]Build result send.");
 		try {
 			Content content = Request.Post("https://notify-api.line.me/api/notify")
 					.addHeader("Authorization", "Bearer " + getLineToken().getToken())
@@ -151,9 +153,9 @@ public class LinePublisher extends Notifier {
 					).execute()
 					.returnContent();
 
-			listener.getLogger().println(String.format("[LineNotifier]Response : %s", content.toString()));
+			logger.println(String.format("[LineNotifier]Response : %s", content.toString()));
 		} catch (Exception e) {
-			listener.getLogger().println("[LineNotifier]Send error" + e.getMessage());
+			logger.println("[LineNotifier]Send error : " + e.getMessage());
 		}
 	}
 
