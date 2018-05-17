@@ -83,32 +83,38 @@ public class LinePublisher extends Notifier {
 
 		SendType type = SendType.getByName(sendType);
 		if (type == null) {
-			logger.println("[LineNotifier]Invalid Send Type : " + sendType);
+			logger.println("[LineNotifier][WARN]Invalid Send Type : " + sendType);
 			return true;
 		}
 
 		Result currentResult = build.getResult();
 		if (currentResult == null) {
-			logger.println("[LineNotifier]Build result can not be received.");
+			logger.println("[LineNotifier][WARN]Build result can not be received.");
+			return true;
+		}
+
+		LineToken lineToken = getLineToken();
+		if (lineToken == null) {
+			logger.println("[LineNotifier][WARN]Token is not exist : current token name is " + lineTokenName);
 			return true;
 		}
 
 		if (type.isSend(currentResult)) {
-			send(createBuildResultMessage(build, currentResult), logger);
+			send(lineToken.getToken(), createBuildResultMessage(build, currentResult), logger);
 			return true;
 		}
 
 		if (changeStatus) {
 			Run previousBuild = build.getPreviousBuild();
 			if (previousBuild == null) {
-				logger.println("[LineNotifier]Previous build result is not exist.");
+				logger.println("[LineNotifier][WARN]Previous build result is not exist.");
 				return true;
 			}
 
 			Result previousResult = previousBuild.getResult();
 			if (currentResult != previousResult) {
-				logger.println(String.format("[LineNotifier]Result is change (%s > %s).", previousResult, currentResult));
-				send(createBuildResultMessage(build, currentResult), logger);
+				logger.println(String.format("[LineNotifier][INFO]Result is change (%s > %s).", previousResult, currentResult));
+				send(lineToken.getToken(), createBuildResultMessage(build, currentResult), logger);
 			}
 		}
 
@@ -143,19 +149,19 @@ public class LinePublisher extends Notifier {
 		return logStringBuilder.toString();
 	}
 
-	private void send(String message, PrintStream logger) {
-		logger.println("[LineNotifier]Build result send.");
+	private void send(String token, String message, PrintStream logger) {
+		logger.println("[LineNotifier][INFO]Build result send.");
 		logger.println(message);
 		try {
 			Content content = Request.Post("https://notify-api.line.me/api/notify")
-					.addHeader("Authorization", "Bearer " + getLineToken().getToken())
+					.addHeader("Authorization", "Bearer " + token)
 					.bodyString("message=" + message, ContentType.create("application/x-www-form-urlencoded", Consts.UTF_8))
 					.execute()
 					.returnContent();
 
 			logger.println(String.format("[LineNotifier]Response : %s", content.toString()));
 		} catch (Exception e) {
-			logger.println("[LineNotifier]Send error : " + e.getMessage());
+			logger.println("[LineNotifier][WARN]Send error : " + e.getMessage());
 		}
 	}
 
@@ -217,7 +223,7 @@ public class LinePublisher extends Notifier {
 		}
 
 		public ListBoxModel doFillLineTokenNameItems(@QueryParameter("lineTokenName") final String value) {
-			List<ListBoxModel.Option> itemList = new ArrayList<>(SendType.values().length);
+			List<ListBoxModel.Option> itemList = new ArrayList<>();
 			for (LineToken lineToken : getLineTokenList()) {
 				itemList.add(new ListBoxModel.Option(lineToken.getName(), lineToken.getName(), StringUtils.equals(lineToken.getName(), value)));
 			}

@@ -3,6 +3,12 @@ package kr.revelope.jenkins.line;
 import hudson.model.Result;
 
 public enum SendType {
+	NEVER {
+		@Override
+		public boolean isSend(Result currentResult) {
+			return false;
+		}
+	},
 	ALWAYS {
 		@Override
 		public boolean isSend(Result currentResult) {
